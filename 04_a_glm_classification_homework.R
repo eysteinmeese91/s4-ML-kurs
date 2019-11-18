@@ -1,4 +1,5 @@
-# Create classification model
+# GLM model - prediction if residence is "expensive" or "cheap"
+
 glm_recipe <- recipe(ad_tot_price ~. , data = finn_train_raw) %>% 
   step_mutate(ad_home_type  = fct_lump(ad_home_type, 4),
               ad_owner_type = fct_lump(ad_owner_type, 2),
@@ -11,6 +12,17 @@ glm_recipe <- recipe(ad_tot_price ~. , data = finn_train_raw) %>%
 
 finn_train <- bake(glm_recipe, finn_train_raw)
 finn_test  <- bake(glm_recipe, finn_test_raw)
+
+
+# Create 10 folds of data
+ad_split <- vfold_cv(finn, 10) %>% 
+  mutate(recipe      = map(splits, prepper, recipe = finn_recipe, retain = FALSE),
+         train_raw   = map(splits, training),
+         test_raw    = map(splits, testing),
+         ad_id       = map(test_raw, ~select(.x, ad_id)),
+         train       = map2(recipe, train_raw, bake),
+         test        = map2(recipe, test_raw, bake)) %>% 
+  select(-test_raw)
 
 glm_mod <- logistic_reg() %>%
   set_engine("glm") %>%
@@ -43,8 +55,11 @@ prediction %>%
   yardstick::roc_curve(truth = truth, estimate = estimate, na_rm = T) %>% 
   autoplot()
 
+# Legge inn resultater i tabell-format
+
 glm.pred <- rep("Cheap", 5881)
 glm.pred[prediction$estimate>.5] <- "Expensive"
 actual <- as.data.frame(prediction$truth) %>% 
   mutate(., actual = if_else(.=="TRUE", "Expensive", "Cheap"))
 table(glm.pred, actual$actual)
+
